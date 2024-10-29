@@ -162,7 +162,7 @@
       loader.style.left = "50%";
       loader.style.transform = "translate(-50%, -50%)";
       loader.style.zIndex = "1000";
-      loader.innerHTML = '<img src="preloader.gif" alt="Loading...">'; // Adjust the path to your loader gif
+      loader.innerHTML = '<img src="https://cdn.dribbble.com/users/172519/screenshots/3520576/dribbble-spinner-800x600.gif" alt="Loading...">'; // Adjust the path to your loader gif
 
       // Append loader to modal
       modal.appendChild(loader);
