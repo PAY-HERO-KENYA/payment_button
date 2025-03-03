@@ -25,6 +25,7 @@ To initialize the PayHero payment widget, add the following script to your HTML 
         amount: 1,
         phone: "0708344101",
         reference: "somerandomstring",
+        name:"customerName",
         buttonName: "Pay Now",
         buttonColor: "#00a884", 
         successUrl: "https://payherokenya.com/",
@@ -43,6 +44,7 @@ To initialize the PayHero payment widget, add the following script to your HTML 
 - **amount**: The amount to be paid.
 - **phone**: The phone number of the payer.
 - **reference**: A unique reference string for the payment.
+- **name**: Customer name: Optional
 - **buttonName**: The label for the payment button.
 - **buttonColor**: The background color of the payment button (in hex format).
 - **successUrl**: The URL to redirect to upon successful payment.
@@ -78,6 +80,7 @@ Here is a complete example of an HTML file integrating the PayHero payment widge
             amount: 1,//provide the amount
             phone: "0708344101",//provide the customer phone
             reference: "somerandomstring",//provide payment reference here
+            name:"customerName",
             buttonName: "Pay Now",//provide button text
             buttonColor: "#00a884", //provide button color
             successUrl: "https://payherokenya.com/",//url user will be redirected after successfull payment
