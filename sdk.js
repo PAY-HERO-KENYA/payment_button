@@ -278,10 +278,11 @@
         
         // Merge any dynamic user options passed during payment initiation
         const paymentOptions = {
-          amount: userOptions.amount || config.defaultAmount,
-          reference: userOptions.reference || config.defaultReference,
+          amount: userOptions.amount || config.amount,
+          reference: userOptions.reference || config.reference,
           // Add other potential dynamic parameters
-          phone: userOptions.phone || config.phone
+          phone: userOptions.phone || config.phone,
+          name: userOptions.name || config.name
         };
         
         // Build payment URL with parameters
