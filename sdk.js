@@ -13,7 +13,8 @@
     failedUrl: "",
     channelID: "",
     phone: "",
-    containerId: null
+    containerId: null,
+    openExternalInNewTab: true  // New configuration option
   };
 
   // Loading indicator states
@@ -112,7 +113,7 @@
       const iframe = document.createElement("iframe");
       iframe.id = "paymentFrame";
       iframe.setAttribute("title", "Payment Form");
-      iframe.setAttribute("sandbox", "allow-forms allow-scripts allow-same-origin allow-top-navigation");
+      iframe.setAttribute("sandbox", "allow-forms allow-scripts allow-same-origin allow-top-navigation allow-popups");
 
       iframeWrapper.appendChild(iframe);
       modalContent.appendChild(iframeWrapper);
@@ -148,21 +149,123 @@
       
       // Add escape key listener
       document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && modal.style.display === "block") {
+        if (e.key === "Escape" && modal && modal.style.display === "block") {
           this.closeModal();
         }
       });
       
       // Handle browser back button
       window.addEventListener("popstate", () => {
-        if (modal.style.display === "block") {
+        if (modal && modal.style.display === "block") {
           this.closeModal();
           history.pushState(null, document.title, window.location.href);
         }
       });
     },
 
-    openPaymentForm() {
+    // Function to handle iframe navigation and external links
+    handleIframeNavigation() {
+      const iframe = document.getElementById("paymentFrame");
+      if (!iframe) return;
+      
+      try {
+        // Create a transparent tracking iframe to detect navigation
+        const tracker = document.createElement('iframe');
+        tracker.id = "navigationTracker";
+        tracker.style.display = "none";
+        document.body.appendChild(tracker);
+        
+        // Setup iframe message listener
+        window.addEventListener('message', (event) => {
+          // Check if the message is from our payment iframe
+          if (event.source === iframe.contentWindow) {
+            // Handle navigation events
+            if (event.data && event.data.type === 'navigation') {
+              const url = event.data.url;
+              // Check if URL is external (success/failure URLs or different domain)
+              if (this.isExternalUrl(url)) {
+                if (config.openExternalInNewTab) {
+                  window.open(url, '_blank');
+                  this.closeModal();
+                }
+              }
+            }
+          }
+        });
+        
+        // Inject navigation tracking script into iframe when it loads
+        iframe.addEventListener('load', () => {
+          try {
+            const iframeDoc = iframe.contentWindow.document;
+            const script = iframeDoc.createElement('script');
+            script.textContent = `
+              // Track all link clicks
+              document.addEventListener('click', (e) => {
+                if (e.target.tagName === 'A' || e.target.closest('a')) {
+                  const link = e.target.tagName === 'A' ? e.target : e.target.closest('a');
+                  const href = link.getAttribute('href');
+                  if (href && !href.startsWith('#')) {
+                    window.parent.postMessage({
+                      type: 'navigation',
+                      url: link.href
+                    }, '*');
+                    
+                    // If it's an external link, prevent default and let parent handle it
+                    if (link.hostname !== window.location.hostname) {
+                      e.preventDefault();
+                    }
+                  }
+                }
+              });
+              
+              // Track form submissions
+              const originalSubmit = HTMLFormElement.prototype.submit;
+              HTMLFormElement.prototype.submit = function() {
+                window.parent.postMessage({
+                  type: 'navigation',
+                  url: this.action || window.location.href
+                }, '*');
+                return originalSubmit.apply(this, arguments);
+              };
+              
+              // Track history changes
+              const originalPushState = history.pushState;
+              history.pushState = function() {
+                window.parent.postMessage({
+                  type: 'navigation',
+                  url: arguments[2] || window.location.href
+                }, '*');
+                return originalPushState.apply(this, arguments);
+              };
+            `;
+            iframeDoc.head.appendChild(script);
+          } catch (err) {
+            console.warn("Cannot inject script into iframe due to cross-origin restrictions");
+            // If we can't inject script, we'll rely on the iframe sandbox to handle links
+          }
+        });
+      } catch (err) {
+        console.error("Error setting up iframe navigation tracking", err);
+      }
+    },
+    
+    isExternalUrl(url) {
+      try {
+        const urlObj = new URL(url);
+        const currentDomain = window.location.hostname;
+        
+        // Check if it's one of our defined success/failure URLs
+        if (config.successUrl && url.includes(config.successUrl)) return true;
+        if (config.failedUrl && url.includes(config.failedUrl)) return true;
+        
+        // Check if it's a different domain
+        return urlObj.hostname !== currentDomain;
+      } catch (e) {
+        return false;
+      }
+    },
+
+    openPaymentForm(userOptions = {}) {
       const modal = document.getElementById("paymentModal");
       const iframe = document.getElementById("paymentFrame");
       const spinner = document.getElementById("paymentSpinner");
@@ -177,8 +280,16 @@
       spinner.style.display = "flex";
       iframe.style.display = "none";
       
+      // Merge any dynamic user options passed during payment initiation
+      const paymentOptions = {
+        amount: userOptions.amount || config.defaultAmount,
+        reference: userOptions.reference || config.defaultReference,
+        // Add other potential dynamic parameters
+        phone: userOptions.phone || config.phone
+      };
+      
       // Build payment URL with parameters
-      let urlWithParams = this.constructPaymentUrl();
+      let urlWithParams = this.constructPaymentUrl(paymentOptions);
       
       // Set iframe source
       iframe.src = urlWithParams;
@@ -201,6 +312,9 @@
         isLoading = false;
       };
       
+      // Setup iframe navigation handling
+      this.handleIframeNavigation();
+      
       // Show modal
       modal.style.display = "block";
       document.body.style.overflow = "hidden";
@@ -209,7 +323,7 @@
       history.pushState({ modal: "open" }, document.title, window.location.href);
     },
 
-    constructPaymentUrl() {
+    constructPaymentUrl(options = {}) {
       // Parse the base URL
       let url;
       try {
@@ -221,12 +335,12 @@
       
       // Add all parameters to URL
       const params = {
-        amount: config.defaultAmount,
-        reference: config.defaultReference,
+        amount: options.amount || config.defaultAmount,
+        reference: options.reference || config.defaultReference,
         success_url: config.successUrl,
         failed_url: config.failedUrl,
         channel_id: config.channelID,
-        phone: config.phone
+        phone: options.phone || config.phone
       };
       
       // Add non-empty parameters
@@ -243,6 +357,7 @@
       const modal = document.getElementById("paymentModal");
       const iframe = document.getElementById("paymentFrame");
       const spinner = document.getElementById("paymentSpinner");
+      const tracker = document.getElementById("navigationTracker");
       
       if (!modal || !iframe) return;
       
@@ -253,6 +368,11 @@
       
       if (spinner) {
         spinner.style.display = "none";
+      }
+      
+      // Remove the tracker iframe if it exists
+      if (tracker) {
+        document.body.removeChild(tracker);
       }
       
       isLoading = false;
@@ -428,7 +548,7 @@
       document.head.appendChild(styleSheet);
     },
     
-    // New public methods for more control
+    // Public methods for more control
     
     /**
      * Update button appearance
@@ -468,6 +588,14 @@
      */
     getConfig() {
       return { ...config };
+    },
+    
+    /**
+     * Directly initiate payment with dynamic parameters
+     * @param {Object} dynamicParams Dynamic payment parameters
+     */
+    pay(dynamicParams = {}) {
+      this.openPaymentForm(dynamicParams);
     }
   };
 
