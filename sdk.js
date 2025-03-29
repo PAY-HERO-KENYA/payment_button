@@ -15,7 +15,7 @@
       reference: "",
       name: "",
       containerId: null,
-      openExternalInNewTab: true  // New configuration option
+      openExternalInNewTab: true  // Default to opening external links in new tab
     };
   
     // Loading indicator states
@@ -164,7 +164,7 @@
         });
       },
   
-      // Function to handle iframe navigation and external links
+      // Improved function to handle iframe navigation and external links
       handleIframeNavigation() {
         const iframe = document.getElementById("paymentFrame");
         if (!iframe) return;
@@ -176,13 +176,20 @@
           tracker.style.display = "none";
           document.body.appendChild(tracker);
           
-          // Setup iframe message listener
+          // Setup iframe message listener with improved handling for success/failed URLs
           window.addEventListener('message', (event) => {
             // Check if the message is from our payment iframe
             if (event.source === iframe.contentWindow && (event.data && event.data.type === 'navigation')) {
               const url = event.data.url;
-              // Check if URL is external (success/failure URLs or different domain)
-              if (this.isExternalUrl(url) && config.openExternalInNewTab) {
+              
+              // Check specifically for success or failed URLs
+              if (this.isSuccessOrFailedUrl(url)) {
+                // Always open success/failed URLs in a new tab
+                window.open(url, '_blank');
+                this.closeModal();
+              }
+              // For other external URLs, respect the openExternalInNewTab config
+              else if (this.isExternalUrl(url) && config.openExternalInNewTab) {
                 window.open(url, '_blank');
                 this.closeModal();
               }
@@ -233,11 +240,31 @@
                   }, '*');
                   return originalPushState.apply(this, arguments);
                 };
+                
+                // Listen for redirects (for payment completion)
+                const originalLocation = Object.getOwnPropertyDescriptor(window, 'location');
+                if (originalLocation && originalLocation.set) {
+                  Object.defineProperty(window, 'location', {
+                    set: function(url) {
+                      window.parent.postMessage({
+                        type: 'navigation',
+                        url: url
+                      }, '*');
+                      return originalLocation.set.call(this, url);
+                    },
+                    get: function() {
+                      return originalLocation.get.call(this);
+                    }
+                  });
+                }
               `;
               iframeDoc.head.appendChild(script);
             } catch (err) {
               console.warn("Cannot inject script into iframe due to cross-origin restrictions");
               // If we can't inject script, we'll rely on the iframe sandbox to handle links
+              
+              // For cross-origin iframes, set up a polling mechanism to check for redirects
+              this.setupRedirectDetection(iframe);
             }
           });
         } catch (err) {
@@ -245,20 +272,79 @@
         }
       },
       
+      // New helper function to check specifically for success or failed URLs
+      isSuccessOrFailedUrl(url) {
+        if (!url) return false;
+        
+        try {
+          // Ensure we have properly configured success/failed URLs
+          const successUrl = config.successUrl;
+          const failedUrl = config.failedUrl;
+          
+          if (!successUrl && !failedUrl) return false;
+          
+          // Check if the URL is a success or failed URL
+          if (successUrl && url.includes(successUrl)) return true;
+          if (failedUrl && url.includes(failedUrl)) return true;
+          
+          return false;
+        } catch (e) {
+          return false;
+        }
+      },
+      
+      // Updated external URL check
       isExternalUrl(url) {
         try {
           const urlObj = new URL(url);
           const currentDomain = window.location.hostname;
-          
-          // Check if it's one of our defined success/failure URLs
-          if (config.successUrl && url.includes(config.successUrl)) return true;
-          if (config.failedUrl && url.includes(config.failedUrl)) return true;
           
           // Check if it's a different domain
           return urlObj.hostname !== currentDomain;
         } catch (e) {
           return false;
         }
+      },
+      
+      // New method for detecting redirects in cross-origin iframes
+      setupRedirectDetection(iframe) {
+        // This is a fallback for cross-origin iframes where we can't inject scripts
+        let previousUrl = iframe.src;
+        
+        // Check for URL changes every 500ms
+        const redirectDetector = setInterval(() => {
+          try {
+            // This will throw an error for cross-origin frames
+            const currentUrl = iframe.contentWindow.location.href;
+            
+            // If we can read the URL and it changed
+            if (currentUrl !== previousUrl) {
+              previousUrl = currentUrl;
+              
+              // Check if it's a success or failed URL
+              if (this.isSuccessOrFailedUrl(currentUrl)) {
+                window.open(currentUrl, '_blank');
+                this.closeModal();
+                clearInterval(redirectDetector);
+              }
+            }
+          } catch (e) {
+            // For cross-origin iframes, we can at least check if the iframe is no longer accessible
+            // which might indicate a redirect has occurred
+            try {
+              // If access to the iframe's content window fails differently than before,
+              // it might have navigated away
+              if (iframe.contentWindow == null) {
+                clearInterval(redirectDetector);
+              }
+            } catch (err) {
+              // Ignore cross-origin errors
+            }
+          }
+        }, 500);
+        
+        // Store the interval ID so we can clear it when closing the modal
+        iframe._redirectDetector = redirectDetector;
       },
   
       openPaymentForm(userOptions = {}) {
@@ -332,13 +418,13 @@
         
         // Add all parameters to URL
         const params = {
-          amount:   config.amount,
-          reference: config.reference,
+          amount: options.amount || config.amount,
+          reference: options.reference || config.reference,
           success_url: config.successUrl,
           failed_url: config.failedUrl,
           channel_id: config.channelID,
-          phone: config.phone,
-          name: config.name
+          phone: options.phone || config.phone,
+          name: options.name || config.name
         };
         
         // Add non-empty parameters
@@ -358,6 +444,11 @@
         const tracker = document.getElementById("navigationTracker");
         
         if (!modal || !iframe) return;
+        
+        // Clear any redirect detection interval if it exists
+        if (iframe._redirectDetector) {
+          clearInterval(iframe._redirectDetector);
+        }
         
         // Reset modal state
         iframe.src = "";
@@ -599,4 +690,4 @@
     };
   
     global.PayHero = PayHero;
-  })();
+})();
