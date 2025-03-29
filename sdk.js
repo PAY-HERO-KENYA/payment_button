@@ -15,7 +15,7 @@
       reference: "",
       name: "",
       containerId: null,
-      openExternalInNewTab: true  // Default to opening external links in new tab
+      openExternalInNewTab: false  // Default to opening external links in new tab
     };
   
     // Loading indicator states
@@ -47,8 +47,52 @@
         
         // Setup event listeners
         this.setupEventListeners();
+        this.setupPaymentMessageListener();
         
         return this;
+      },
+      
+      // New method to handle payment result messages
+      setupPaymentMessageListener() {
+        window.addEventListener("message", (event) => {
+          // Process payment result messages
+          if (event.data && (event.data.paymentSuccess !== undefined)) {
+            console.log("Payment message received:", event.data);
+            
+            if (event.data.paymentSuccess) {
+              // Payment successful
+              if (config.successUrl) {
+                // Redirect to success URL if provided
+                if (config.openExternalInNewTab) {
+                  window.open(config.successUrl, '_blank');
+                } else {
+                  window.location.href = config.successUrl;
+                }
+              }
+              // Trigger success event
+              window.dispatchEvent(new CustomEvent("payherosuccess", { 
+                detail: event.data 
+              }));
+            } else {
+              // Payment failed
+              if (config.failedUrl) {
+                // Redirect to failed URL if provided
+                if (config.openExternalInNewTab) {
+                  window.open(config.failedUrl, '_blank');
+                } else {
+                  window.location.href = config.failedUrl;
+                }
+              }
+              // Trigger failure event
+              window.dispatchEvent(new CustomEvent("payherofailed", { 
+                detail: event.data 
+              }));
+            }
+            
+            // Close the modal in either case
+            this.closeModal();
+          }
+        }, false);
       },
   
       createButton(containerId) {
@@ -164,7 +208,7 @@
         });
       },
   
-      // Improved function to handle iframe navigation and external links
+      // Function to handle iframe navigation and external links
       handleIframeNavigation() {
         const iframe = document.getElementById("paymentFrame");
         if (!iframe) return;
@@ -176,7 +220,7 @@
           tracker.style.display = "none";
           document.body.appendChild(tracker);
           
-          // Setup iframe message listener with improved handling for success/failed URLs
+          // Setup iframe message listener
           window.addEventListener('message', (event) => {
             // Check if the message is from our payment iframe
             if (event.source === iframe.contentWindow && (event.data && event.data.type === 'navigation')) {
@@ -184,8 +228,21 @@
               
               // Check specifically for success or failed URLs
               if (this.isSuccessOrFailedUrl(url)) {
-                // Always open success/failed URLs in a new tab
-                window.open(url, '_blank');
+                // Check which URL it is
+                const isSuccess = config.successUrl && url.includes(config.successUrl);
+                
+                // Dispatch appropriate event
+                window.dispatchEvent(new CustomEvent(isSuccess ? "payherosuccess" : "payherofailed", { 
+                  detail: { url: url } 
+                }));
+                
+                // Open in new tab if configured
+                if (config.openExternalInNewTab) {
+                  window.open(url, '_blank');
+                } else {
+                  window.location.href = url;
+                }
+                
                 this.closeModal();
               }
               // For other external URLs, respect the openExternalInNewTab config
@@ -272,7 +329,7 @@
         }
       },
       
-      // New helper function to check specifically for success or failed URLs
+      // Helper function to check specifically for success or failed URLs
       isSuccessOrFailedUrl(url) {
         if (!url) return false;
         
@@ -293,7 +350,7 @@
         }
       },
       
-      // Updated external URL check
+      // Check if URL is external
       isExternalUrl(url) {
         try {
           const urlObj = new URL(url);
@@ -306,7 +363,7 @@
         }
       },
       
-      // New method for detecting redirects in cross-origin iframes
+      // Method for detecting redirects in cross-origin iframes
       setupRedirectDetection(iframe) {
         // This is a fallback for cross-origin iframes where we can't inject scripts
         let previousUrl = iframe.src;
@@ -323,7 +380,19 @@
               
               // Check if it's a success or failed URL
               if (this.isSuccessOrFailedUrl(currentUrl)) {
-                window.open(currentUrl, '_blank');
+                const isSuccess = config.successUrl && currentUrl.includes(config.successUrl);
+                
+                // Dispatch appropriate event
+                window.dispatchEvent(new CustomEvent(isSuccess ? "payherosuccess" : "payherofailed", { 
+                  detail: { url: currentUrl } 
+                }));
+                
+                if (config.openExternalInNewTab) {
+                  window.open(currentUrl, '_blank');
+                } else {
+                  window.location.href = currentUrl;
+                }
+                
                 this.closeModal();
                 clearInterval(redirectDetector);
               }
@@ -424,7 +493,8 @@
           failed_url: config.failedUrl,
           channel_id: config.channelID,
           phone: options.phone || config.phone,
-          name: options.name || config.name
+          name: options.name || config.name,
+          isEmbedded: "true"  // Add the isEmbedded=true parameter
         };
         
         // Add non-empty parameters
