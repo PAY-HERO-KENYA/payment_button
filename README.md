@@ -7,7 +7,7 @@ This guide provides instructions on how to integrate the PayHero payment button 
 Include the PayHero SDK script in your HTML file:
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/PAY-HERO-KENYA/payment_button/sdk.js"></script>
+<script src="https://applet.payherokenya.com/cdn/button_sdk.js"></script>
 ```
 
 ## Usage
@@ -67,7 +67,7 @@ Here is a complete example of an HTML file integrating the PayHero payment widge
     <div id="payHero"></div>
 
     <!-- Include PayHero SDK -->
-    <script src="https://cdn.jsdelivr.net/gh/PAY-HERO-KENYA/payment_button/sdk.js"></script>
+    <script src="https://applet.payherokenya.com/cdn/button_sdk.js"></script>
 
     <!-- Initialize PayHero Payment Widget -->
     <script>
